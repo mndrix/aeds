@@ -33,17 +33,16 @@ func Delete(c appengine.Context, e Entity) error {
 }
 
 // FromId fetches an entity based on its ID.  The given entity
-// should have enough data to calculate the entity's key.
-func FromId(c appengine.Context, e Entity) Entity {
+// should have enough data to calculate the entity's key.  On
+// success, the entity is modified in place with all data from
+// the datastore.
+func FromId(c appengine.Context, e Entity) (Entity, error) {
 	err := datastore.Get(c, Key(c, e), e)
 	if err == nil {
-		return e
+		return e, nil
 	}
 	if IsErrFieldMismatch(err) {
-		return e
+		return e, nil
 	}
-	if err == datastore.ErrNoSuchEntity {
-		return nil
-	}
-	panic(err) // unknown datastore error
+	return nil, err // unknown datastore error
 }
