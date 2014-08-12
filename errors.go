@@ -1,6 +1,10 @@
 package aeds
 
-import "strings"
+import (
+	"strings"
+
+	"appengine/datastore"
+)
 
 // Returns true if the given error is a datastore deadline exceeded error
 func IsDeadlineExceeded(err error) bool {
