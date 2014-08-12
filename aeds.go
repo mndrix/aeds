@@ -5,8 +5,6 @@ import (
 	"appengine/datastore"
 )
 
-import . "util"
-
 // interface for structures that can be stored in App Engine's datastore
 type Entity interface {
 	Kind() string
