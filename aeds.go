@@ -88,14 +88,19 @@ func Delete(c appengine.Context, e Entity) error {
 // Field mismatch errors are ignored.
 func FromId(c appengine.Context, e Entity) (Entity, error) {
 	lookupKey := Key(c, e)
+	ttl := e.CacheTtl()
 
 	// should we look in memcache too?
-	if e.CacheTtl() > 0 {
+	cacheMiss := false
+	if ttl > 0 {
 		item, err := memcache.Get(c, lookupKey.String())
 		if err == nil {
 			buf := bytes.NewBuffer(item.Value)
 			err := gob.NewDecoder(buf).Decode(e)
 			return e, err
+		}
+		if err == memcache.ErrCacheMiss {
+			cacheMiss = true
 		}
 		// ignore any memcache errors
 	}
@@ -103,6 +108,25 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 	// look in the datastore
 	err := datastore.Get(c, lookupKey, e)
 	if err == nil {
+		// should we update memcache?
+		if cacheMiss && ttl > 0 {
+			// encode
+			var value bytes.Buffer
+			err := gob.NewEncoder(&value).Encode(e)
+			if err != nil {
+				return nil, err
+			}
+
+			// store
+			item := &memcache.Item{
+				Key:        lookupKey.String(),
+				Value:      value.Bytes(),
+				Expiration: ttl,
+			}
+			err = memcache.Set(c, item)
+			_ = err // ignore memcache errors
+		}
+
 		return e, nil
 	}
 	if IsErrFieldMismatch(err) {
