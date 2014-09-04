@@ -110,6 +110,8 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 	if err == nil {
 		// should we update memcache?
 		if cacheMiss && ttl > 0 {
+			e.HookBeforePut()
+
 			// encode
 			var value bytes.Buffer
 			err := gob.NewEncoder(&value).Encode(e)
