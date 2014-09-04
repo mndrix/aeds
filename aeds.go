@@ -15,6 +15,7 @@ type Entity interface {
 	Kind() string
 	StringId() string
 
+	HookAfterGet()  // Calculate derived fields after fetching from datastore
 	HookBeforePut() // Calculate derived fields before writing to datastore
 
 	// CacheTtl indicates how long the entity should be cached in memcache.
@@ -97,6 +98,7 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 		if err == nil {
 			buf := bytes.NewBuffer(item.Value)
 			err := gob.NewDecoder(buf).Decode(e)
+			e.HookAfterGet()
 			return e, err
 		}
 		if err == memcache.ErrCacheMiss {
@@ -108,6 +110,8 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 	// look in the datastore
 	err := datastore.Get(c, lookupKey, e)
 	if err == nil {
+		e.HookAfterGet()
+
 		// should we update memcache?
 		if cacheMiss && ttl > 0 {
 			e.HookBeforePut()
@@ -132,6 +136,7 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 		return e, nil
 	}
 	if IsErrFieldMismatch(err) {
+		e.HookAfterGet()
 		return e, nil
 	}
 	return nil, err // unknown datastore error
