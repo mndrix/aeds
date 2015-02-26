@@ -59,7 +59,9 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 			Expiration: ttl,
 		}
 		err := memcache.Set(c, item)
-		c.Errorf("aeds.Put memcache.Set error: %s", err)
+		if err != nil {
+			c.Errorf("aeds.Put memcache.Set error: %s", err)
+		}
 	}
 
 	return key, nil
