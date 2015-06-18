@@ -2,8 +2,10 @@ package kvs
 
 import (
 	"bytes"
+	"compress/gzip"
 	"encoding/gob"
 	"fmt"
+	"io/ioutil"
 	"time"
 
 	"appengine"
@@ -112,6 +114,39 @@ func (kv *KV) Delete(c appengine.Context) error {
 	// delete from memcache too
 	err = memcache.Delete(c, memKey(kv.Key))
 	_ = err // memcache is an optimization. ignore errors.
+	return nil
+}
+
+// Compress rewrites the Value field by compressing it with gzip.
+func (kv *KV) Compress() error {
+	var buf bytes.Buffer
+	w := gzip.NewWriter(&buf)
+	_, err := w.Write(kv.Value)
+	if err != nil {
+		return err
+	}
+	err = w.Close()
+	if err != nil {
+		return err
+	}
+
+	kv.Value = buf.Bytes()
+	return nil
+}
+
+// Decompress rewrites the Value field by decompressing it with gzip.
+func (kv *KV) Decompress() error {
+	buf := bytes.NewBuffer(kv.Value)
+	r, err := gzip.NewReader(buf)
+	if err != nil {
+		return err
+	}
+	val, err := ioutil.ReadAll(r)
+	if err != nil {
+		return err
+	}
+
+	kv.Value = val
 	return nil
 }
 
