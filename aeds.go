@@ -40,6 +40,16 @@ type CanBeCached interface {
 	CacheTtl() time.Duration
 }
 
+// NeedsIdempotentReset is implemented by any Entity that needs to reset its
+// fields to zero when performing datastore read operations that are intended to
+// be idempotent. For example, a datastore read into a slice property is not
+// idempotent (it just appends property values to the slice).  In that case,
+// this method might manually reset the slice length to 0 so that append leaves
+// only the desired data.
+type NeedsIdempotentReset interface {
+	IdempotentReset()
+}
+
 // Key returns a datastore key for this entity.
 func Key(c appengine.Context, e Entity) *datastore.Key {
 	return datastore.NewKey(c, e.Kind(), e.StringId(), 0, nil)
@@ -153,6 +163,85 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 	}
 	return nil, err // unknown datastore error
 }
+
+// Modify atomically executes a read, modify, write operation on a single
+// entity.  It should be used any time the results of a datastore read influence
+// the contents of a datastore write.  Before executing f, the contents of e
+// will be overwritten with the latest data available from the datastore.
+//
+// f should return an error value if something goes wrong with the modification.
+// Modify returns that error value.
+//
+// As always, hooks defined by HookAfterGet() and HookBeforePut() are
+// automatically executed at the appropriate time.  Be sure to define
+// IdempotentReset() if your entity has any slice properties.
+func Modify(c appengine.Context, e Entity, f func(Entity) error) error {
+	key := Key(c, e)
+
+	err := datastore.RunInTransaction(c, func(c appengine.Context) error {
+		// reset slice fields (inside the transaction so it's retried)
+		if x, ok := e.(NeedsIdempotentReset); ok {
+			x.IdempotentReset()
+		}
+
+		// fetch most recent entity from datastore
+		err := datastore.Get(c, key, e)
+		if err == nil || IsErrFieldMismatch(err) {
+			if x, ok := e.(HasGetHook); ok {
+				x.HookAfterGet()
+			}
+		} else {
+			return err
+		}
+
+		// perform the modifications
+		err = f(e)
+		if err != nil {
+			return err
+		}
+
+		// write entity to datastore
+		if x, ok := e.(HasPutHook); ok {
+			x.HookBeforePut()
+		}
+		_, err = datastore.Put(c, key, e)
+		return err
+	}, nil)
+
+	// did the transaction succeed?
+	if err != nil {
+		return err
+	}
+
+	// delete cache entry (See Note_1)
+	if canBeCached(e) {
+		err = memcache.Delete(c, key.String())
+		switch err {
+		case nil:
+		case memcache.ErrCacheMiss:
+		default:
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Note_1
+//
+// Memcache operations are not transactional.  All combinations of commit
+// and delete-from-cache leave some window of time during which the cache is
+// stale.  The best we can do is minimize the size of this window.
+//
+// If we delete cache before our transaction, someone else might read a value
+// and populate the cache just before our transaction commits. That leaves a
+// permanent window of stale cache data. If we delete cache inside our
+// transaction, we end have the same problem.
+//
+// By deleting cache right after we commit, there's a small window of time
+// between commit and delete when someone might read and populate the cache with
+// stale data.  Very soon afterwards, we delete the cache.  The window of stale
+// date is on the order of 10 ms.  That's the best combination available to us.
 
 func canBeCached(e Entity) bool {
 	x, ok := e.(CanBeCached)
