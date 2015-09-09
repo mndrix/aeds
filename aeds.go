@@ -15,14 +15,25 @@ type Entity interface {
 	Kind() string
 	StringId() string
 
-	HookAfterGet()  // Calculate derived fields after fetching from datastore
-	HookBeforePut() // Calculate derived fields before writing to datastore
-
 	// CacheTtl indicates how long the entity should be cached in memcache.
 	// Return zero to disable memcache.  If this method returns a non-zero
 	// duration, the receiver should also implement the GobEncoder and
 	// GobDecoder interfaces.
 	CacheTtl() time.Duration
+}
+
+// HasGetHook is implemented by any Entity that wants to execute
+// specific code after fetching the raw entity from datastore.
+// This is often used to calculate derived fields.
+type HasGetHook interface {
+	HookAfterGet()
+}
+
+// HasPutHook is implemented by any Entity that wants to execute
+// specific code before writing the raw entity to datastore.
+// This is often used to calculate derived fields.
+type HasPutHook interface {
+	HookBeforePut()
 }
 
 // Key returns a datastore key for this entity.
@@ -32,7 +43,9 @@ func Key(c appengine.Context, e Entity) *datastore.Key {
 
 // Put stores an entity in the datastore.
 func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
-	e.HookBeforePut()
+	if x, ok := e.(HasPutHook); ok {
+		x.HookBeforePut()
+	}
 	ttl := e.CacheTtl()
 
 	// encode entity as a gob (before storing in datastore)
@@ -100,7 +113,9 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 		if err == nil {
 			buf := bytes.NewBuffer(item.Value)
 			err := gob.NewDecoder(buf).Decode(e)
-			e.HookAfterGet()
+			if x, ok := e.(HasGetHook); ok {
+				x.HookAfterGet()
+			}
 			return e, err
 		}
 		if err == memcache.ErrCacheMiss {
@@ -112,11 +127,15 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 	// look in the datastore
 	err := datastore.Get(c, lookupKey, e)
 	if err == nil {
-		e.HookAfterGet()
+		if x, ok := e.(HasGetHook); ok {
+			x.HookAfterGet()
+		}
 
 		// should we update memcache?
 		if cacheMiss && ttl > 0 {
-			e.HookBeforePut()
+			if x, ok := e.(HasPutHook); ok {
+				x.HookBeforePut()
+			}
 
 			// encode
 			var value bytes.Buffer
@@ -138,7 +157,9 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 		return e, nil
 	}
 	if IsErrFieldMismatch(err) {
-		e.HookAfterGet()
+		if x, ok := e.(HasGetHook); ok {
+			x.HookAfterGet()
+		}
 		return e, nil
 	}
 	return nil, err // unknown datastore error
