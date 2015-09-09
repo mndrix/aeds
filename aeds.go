@@ -126,7 +126,7 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 
 	// look in the datastore
 	err := datastore.Get(c, lookupKey, e)
-	if err == nil {
+	if err == nil || IsErrFieldMismatch(err) {
 		if x, ok := e.(HasGetHook); ok {
 			x.HookAfterGet()
 		}
@@ -154,12 +154,6 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 			_ = err // ignore memcache errors
 		}
 
-		return e, nil
-	}
-	if IsErrFieldMismatch(err) {
-		if x, ok := e.(HasGetHook); ok {
-			x.HookAfterGet()
-		}
 		return e, nil
 	}
 	return nil, err // unknown datastore error
