@@ -50,19 +50,6 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 	if x, ok := e.(HasPutHook); ok {
 		x.HookBeforePut()
 	}
-	var ttl time.Duration
-	if x, ok := e.(CanBeCached); ok {
-		ttl = x.CacheTtl()
-	}
-
-	// encode entity as a gob (before storing in datastore)
-	var value bytes.Buffer
-	if ttl > 0 {
-		err := gob.NewEncoder(&value).Encode(e)
-		if err != nil {
-			return nil, err
-		}
-	}
 
 	// store entity in the datastore
 	lookupKey := Key(c, e)
@@ -71,16 +58,14 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 		return nil, err
 	}
 
-	// store entity in memcache too?
-	if ttl > 0 {
-		item := &memcache.Item{
-			Key:        lookupKey.String(),
-			Value:      value.Bytes(),
-			Expiration: ttl,
-		}
-		err := memcache.Set(c, item)
-		if err != nil {
-			c.Errorf("aeds.Put memcache.Set error: %s", err)
+	// delete from memcache?
+	if x, ok := e.(CanBeCached); ok && x.CacheTtl() > 0 {
+		err := memcache.Delete(c, lookupKey.String())
+		switch err {
+		case nil:
+		case memcache.ErrCacheMiss:
+		default:
+			c.Errorf("aeds.Put memcache.Delete error: %s", err)
 		}
 	}
 
