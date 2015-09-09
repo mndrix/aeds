@@ -59,7 +59,7 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 	}
 
 	// delete from memcache?
-	if x, ok := e.(CanBeCached); ok && x.CacheTtl() > 0 {
+	if canBeCached(e) {
 		err := memcache.Delete(c, lookupKey.String())
 		switch err {
 		case nil:
@@ -77,7 +77,7 @@ func Delete(c appengine.Context, e Entity) error {
 	lookupKey := Key(c, e)
 
 	// should the entity be removed from memcache too?
-	if x, ok := e.(CanBeCached); ok && x.CacheTtl() > 0 {
+	if canBeCached(e) {
 		err := memcache.Delete(c, lookupKey.String())
 		if err == memcache.ErrCacheMiss {
 			// noop
@@ -152,4 +152,9 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 		return e, nil
 	}
 	return nil, err // unknown datastore error
+}
+
+func canBeCached(e Entity) bool {
+	x, ok := e.(CanBeCached)
+	return ok && x.CacheTtl() > 0
 }
