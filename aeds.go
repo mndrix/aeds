@@ -14,12 +14,6 @@ import (
 type Entity interface {
 	Kind() string
 	StringId() string
-
-	// CacheTtl indicates how long the entity should be cached in memcache.
-	// Return zero to disable memcache.  If this method returns a non-zero
-	// duration, the receiver should also implement the GobEncoder and
-	// GobDecoder interfaces.
-	CacheTtl() time.Duration
 }
 
 // HasGetHook is implemented by any Entity that wants to execute
@@ -36,6 +30,16 @@ type HasPutHook interface {
 	HookBeforePut()
 }
 
+// CanBeCached is implemented by any Entity that wants to
+// have its values stored in memcache to improve read performance.
+type CanBeCached interface {
+	// CacheTtl indicates how long the entity should be cached in memcache.
+	// Return zero to disable memcache.  If this method returns a non-zero
+	// duration, the receiver should also implement the GobEncoder and
+	// GobDecoder interfaces.
+	CacheTtl() time.Duration
+}
+
 // Key returns a datastore key for this entity.
 func Key(c appengine.Context, e Entity) *datastore.Key {
 	return datastore.NewKey(c, e.Kind(), e.StringId(), 0, nil)
@@ -46,7 +50,10 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 	if x, ok := e.(HasPutHook); ok {
 		x.HookBeforePut()
 	}
-	ttl := e.CacheTtl()
+	var ttl time.Duration
+	if x, ok := e.(CanBeCached); ok {
+		ttl = x.CacheTtl()
+	}
 
 	// encode entity as a gob (before storing in datastore)
 	var value bytes.Buffer
@@ -85,7 +92,7 @@ func Delete(c appengine.Context, e Entity) error {
 	lookupKey := Key(c, e)
 
 	// should the entity be removed from memcache too?
-	if e.CacheTtl() > 0 {
+	if x, ok := e.(CanBeCached); ok && x.CacheTtl() > 0 {
 		err := memcache.Delete(c, lookupKey.String())
 		if err == memcache.ErrCacheMiss {
 			// noop
@@ -104,7 +111,10 @@ func Delete(c appengine.Context, e Entity) error {
 // Field mismatch errors are ignored.
 func FromId(c appengine.Context, e Entity) (Entity, error) {
 	lookupKey := Key(c, e)
-	ttl := e.CacheTtl()
+	var ttl time.Duration
+	if x, ok := e.(CanBeCached); ok {
+		ttl = x.CacheTtl()
+	}
 
 	// should we look in memcache too?
 	cacheMiss := false
