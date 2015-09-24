@@ -247,3 +247,23 @@ func canBeCached(e Entity) bool {
 	x, ok := e.(CanBeCached)
 	return ok && x.CacheTtl() > 0
 }
+
+// StructProperties returns a slice of properties indicating how this struct
+// would be saved to the datastore if one were to call datastore.SaveStruct() on
+// it. The struct is not actually written to the datastore.  src must be a
+// struct pointer.
+func StructProperties(src interface{}) (datastore.PropertyList, error) {
+	propCh := make(chan datastore.Property)
+	errCh := make(chan error)
+
+	go func() {
+		errCh <- datastore.SaveStruct(src, propCh)
+	}()
+
+	props := make(datastore.PropertyList, 0)
+	for prop := range propCh {
+		props = append(props, prop)
+	}
+
+	return props, <-errCh
+}
