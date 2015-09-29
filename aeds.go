@@ -186,6 +186,10 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 // As always, hooks defined by HookAfterGet() and HookBeforePut() are
 // automatically executed at the appropriate time.  Be sure to define
 // IdempotentReset() if your entity has any slice properties.
+//
+// You should not perform any datastore operations inside f.  By design, it
+// doesn't have access to the transactional context used internally.  Other
+// datastore changes will happen, even if the transaction fails to commit.
 func Modify(c appengine.Context, e Entity, f func(Entity) error) error {
 	key := Key(c, e)
 
