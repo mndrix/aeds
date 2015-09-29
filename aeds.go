@@ -69,17 +69,32 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 	}
 
 	// delete from memcache?
-	if canBeCached(e) {
-		err := memcache.Delete(c, lookupKey.String())
-		switch err {
-		case nil:
-		case memcache.ErrCacheMiss:
-		default:
-			c.Errorf("aeds.Put memcache.Delete error: %s", err)
-		}
+	err = ClearCache(c, e)
+	if err != nil {
+		c.Errorf("aeds.Put ClearCache error: %s", err)
 	}
 
 	return key, nil
+}
+
+// ClearCache explicitly clears any memcache entries associated with this
+// entity. One doesn't usually call this function directly.  Rather, it's called
+// implicitly when other aeds functions know the cache should be cleared.
+func ClearCache(c appengine.Context, e Entity) error {
+	// nothing to do for uncacheable entities
+	if !canBeCached(e) {
+		return nil
+	}
+
+	err := memcache.Delete(c, Key(c, e).String())
+	switch err {
+	case nil:
+	case memcache.ErrCacheMiss:
+	default:
+		return err
+	}
+
+	return nil
 }
 
 // Delete removes an entity from the datastore.
@@ -87,13 +102,9 @@ func Delete(c appengine.Context, e Entity) error {
 	lookupKey := Key(c, e)
 
 	// should the entity be removed from memcache too?
-	if canBeCached(e) {
-		err := memcache.Delete(c, lookupKey.String())
-		if err == memcache.ErrCacheMiss {
-			// noop
-		} else if err != nil {
-			return err
-		}
+	err := ClearCache(c, e)
+	if err != nil {
+		return err
 	}
 
 	return datastore.Delete(c, lookupKey)
@@ -214,14 +225,9 @@ func Modify(c appengine.Context, e Entity, f func(Entity) error) error {
 	}
 
 	// delete cache entry (See Note_1)
-	if canBeCached(e) {
-		err = memcache.Delete(c, key.String())
-		switch err {
-		case nil:
-		case memcache.ErrCacheMiss:
-		default:
-			return err
-		}
+	err = ClearCache(c, e)
+	if err != nil {
+		return err
 	}
 
 	return nil
