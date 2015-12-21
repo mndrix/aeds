@@ -35,7 +35,7 @@ func Find(c appengine.Context, k string) (*KV, error) {
 	memcacheKey := memKey(k)
 	item, err := memcache.Get(c, memcacheKey)
 	if err == nil {
-		kv.Key = item.Key
+		kv.Key = k
 		kv.Value = item.Value
 		return kv, nil
 	}
