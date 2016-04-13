@@ -8,9 +8,10 @@ import (
 	"io/ioutil"
 	"time"
 
-	"appengine"
-	"appengine/datastore"
-	"appengine/memcache"
+	"golang.org/x/net/context"
+
+	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/memcache"
 )
 
 const kind = "kvs"
@@ -29,7 +30,7 @@ type KV struct {
 
 // Find looks for an existing key-value pair.  Returns
 // NotFound if the key does not exist.
-func Find(c appengine.Context, k string) (*KV, error) {
+func Find(c context.Context, k string) (*KV, error) {
 	// is the kv in memcache?
 	kv := new(KV)
 	memcacheKey := memKey(k)
@@ -68,12 +69,12 @@ func Find(c appengine.Context, k string) (*KV, error) {
 	return kv, nil
 }
 
-func (kv *KV) datastoreKey(c appengine.Context) *datastore.Key {
+func (kv *KV) datastoreKey(c context.Context) *datastore.Key {
 	return datastore.NewKey(c, kind, kv.Key, 0, nil)
 }
 
 // Put stores a key-value pair until its expiration.
-func (kv *KV) Put(c appengine.Context) error {
+func (kv *KV) Put(c context.Context) error {
 	// prepare a memcache item for later
 	memcacheKey := memKey(kv.Key)
 	item := &memcache.Item{
@@ -104,7 +105,7 @@ func (kv *KV) Put(c appengine.Context) error {
 }
 
 // Remove a rule in the datastore
-func (kv *KV) Delete(c appengine.Context) error {
+func (kv *KV) Delete(c context.Context) error {
 	// delete from datastore
 	err := datastore.Delete(c, kv.datastoreKey(c))
 	if err != nil {

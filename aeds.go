@@ -5,9 +5,10 @@ import (
 	"encoding/gob"
 	"time"
 
-	"appengine"
-	"appengine/datastore"
-	"appengine/memcache"
+	"golang.org/x/net/context"
+	"google.golang.org/appengine/datastore"
+	"google.golang.org/appengine/log"
+	"google.golang.org/appengine/memcache"
 )
 
 // interface for structures that can be stored in App Engine's datastore
@@ -51,12 +52,12 @@ type NeedsIdempotentReset interface {
 }
 
 // Key returns a datastore key for this entity.
-func Key(c appengine.Context, e Entity) *datastore.Key {
+func Key(c context.Context, e Entity) *datastore.Key {
 	return datastore.NewKey(c, e.Kind(), e.StringId(), 0, nil)
 }
 
 // Put stores an entity in the datastore.
-func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
+func Put(c context.Context, e Entity) (*datastore.Key, error) {
 	if x, ok := e.(HasPutHook); ok {
 		x.HookBeforePut()
 	}
@@ -71,7 +72,7 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 	// delete from memcache?
 	err = ClearCache(c, e)
 	if err != nil {
-		c.Errorf("aeds.Put ClearCache error: %s", err)
+		log.Errorf(c, "aeds.Put ClearCache error: %s", err)
 	}
 
 	return key, nil
@@ -80,7 +81,7 @@ func Put(c appengine.Context, e Entity) (*datastore.Key, error) {
 // ClearCache explicitly clears any memcache entries associated with this
 // entity. One doesn't usually call this function directly.  Rather, it's called
 // implicitly when other aeds functions know the cache should be cleared.
-func ClearCache(c appengine.Context, e Entity) error {
+func ClearCache(c context.Context, e Entity) error {
 	// nothing to do for uncacheable entities
 	if !canBeCached(e) {
 		return nil
@@ -98,7 +99,7 @@ func ClearCache(c appengine.Context, e Entity) error {
 }
 
 // Delete removes an entity from the datastore.
-func Delete(c appengine.Context, e Entity) error {
+func Delete(c context.Context, e Entity) error {
 	lookupKey := Key(c, e)
 
 	// should the entity be removed from memcache too?
@@ -115,7 +116,7 @@ func Delete(c appengine.Context, e Entity) error {
 // success, the entity is modified in place with all data from
 // the datastore.
 // Field mismatch errors are ignored.
-func FromId(c appengine.Context, e Entity) (Entity, error) {
+func FromId(c context.Context, e Entity) (Entity, error) {
 	lookupKey := Key(c, e)
 	var ttl time.Duration
 	if x, ok := e.(CanBeCached); ok {
@@ -190,10 +191,10 @@ func FromId(c appengine.Context, e Entity) (Entity, error) {
 // You should not perform any datastore operations inside f.  By design, it
 // doesn't have access to the transactional context used internally.  Other
 // datastore changes will happen, even if the transaction fails to commit.
-func Modify(c appengine.Context, e Entity, f func(Entity) error) error {
+func Modify(c context.Context, e Entity, f func(Entity) error) error {
 	key := Key(c, e)
 
-	err := datastore.RunInTransaction(c, func(c appengine.Context) error {
+	err := datastore.RunInTransaction(c, func(c context.Context) error {
 		// reset slice fields (inside the transaction so it's retried)
 		if x, ok := e.(NeedsIdempotentReset); ok {
 			x.IdempotentReset()
@@ -256,24 +257,4 @@ func Modify(c appengine.Context, e Entity, f func(Entity) error) error {
 func canBeCached(e Entity) bool {
 	x, ok := e.(CanBeCached)
 	return ok && x.CacheTtl() > 0
-}
-
-// StructProperties returns a slice of properties indicating how this struct
-// would be saved to the datastore if one were to call datastore.SaveStruct() on
-// it. The struct is not actually written to the datastore.  src must be a
-// struct pointer.
-func StructProperties(src interface{}) (datastore.PropertyList, error) {
-	propCh := make(chan datastore.Property)
-	errCh := make(chan error)
-
-	go func() {
-		errCh <- datastore.SaveStruct(src, propCh)
-	}()
-
-	props := make(datastore.PropertyList, 0)
-	for prop := range propCh {
-		props = append(props, prop)
-	}
-
-	return props, <-errCh
 }
