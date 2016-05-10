@@ -21,9 +21,9 @@ var NotFound = fmt.Errorf("Key-value pair was not found")
 // use App Engine's datastore as a simple key-value store
 
 type KV struct {
-	Key     string    `datastore:",noindex"`
-	Value   []byte    `datastore:",noindex"`
-	Expires time.Time `datastore:",noindex"`
+	Key     string `datastore:",noindex"`
+	Value   []byte `datastore:",noindex"`
+	Expires time.Time
 
 	Ttl time.Duration `datastore:"-"` // convenient alternative to Expires
 }
