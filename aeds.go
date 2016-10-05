@@ -78,6 +78,34 @@ func Put(c context.Context, e Entity) (*datastore.Key, error) {
 	return key, nil
 }
 
+// PutMulti stores many entities in the datastore.
+func PutMulti(c context.Context, es []Entity) ([]*datastore.Key, error) {
+	keys := make([]*datastore.Key, 0, len(es))
+
+	// prepare for PutMulti
+	for _, e := range es {
+		if x, ok := e.(HasPutHook); ok {
+			x.HookBeforePut()
+		}
+		keys = append(keys, Key(c, e))
+	}
+
+	keys, err := datastore.PutMulti(c, keys, es)
+	if err != nil {
+		return nil, err
+	}
+
+	// delete from memcache?
+	for _, e := range es {
+		err = ClearCache(c, e)
+		if err != nil {
+			log.Errorf(c, "aeds.Put ClearCache error: %s", err)
+		}
+	}
+
+	return keys, nil
+}
+
 // ClearCache explicitly clears any memcache entries associated with this
 // entity. One doesn't usually call this function directly.  Rather, it's called
 // implicitly when other aeds functions know the cache should be cleared.
