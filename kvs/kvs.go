@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/gob"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"time"
@@ -172,4 +173,41 @@ func (kv *KV) Decode(x interface{}) error {
 // returns a key for use with memcache
 func memKey(key string) string {
 	return fmt.Sprintf("%s: %s", kind, key)
+}
+
+var CollectGarbageTimeout = errors.New("CollectGarbage timed out")
+
+// CollectGarbage deletes expired kv entities from the datastore.  It tries to
+// spend no more than the allotted time on this task. This function should be
+// called regularly to prevent expired kvs from accumulating.
+//
+// If the timeout is reached, returns CollectGarbageTimeout regardless how many
+// entities were expired before then.
+func CollectGarbage(c context.Context, ttl time.Duration) error {
+	quittingTime := time.Now().Add(ttl)
+
+	q := datastore.NewQuery(kind).
+		Filter("Expires<", time.Now()).
+		Order("Expires").
+		Limit(400).
+		KeysOnly()
+	for {
+		if time.Now().After(quittingTime) {
+			return CollectGarbageTimeout
+		}
+
+		keys, err := q.GetAll(c, nil)
+		if len(keys) > 0 {
+			err = datastore.DeleteMulti(c, keys)
+			// don't have to clear memcache. it expires on its own
+		}
+		if err != nil {
+			return err
+		}
+		if len(keys) == 0 {
+			break
+		}
+	}
+
+	return nil
 }
