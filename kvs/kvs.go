@@ -40,6 +40,13 @@ type GC struct {
 	//
 	// Defaults to 50 seconds.
 	Ttl time.Duration
+
+	// Leeway describes how far past its expiration a KV must be before it's
+	// considered for garbage collection.  It should be set high enough that
+	// the probability of a KV being used again is very low.
+	//
+	// Defaults to 24 hours.
+	Leeway time.Duration
 }
 
 // Find looks for an existing key-value pair.  Returns
@@ -203,11 +210,15 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 	if opts.Ttl == 0 {
 		opts.Ttl = 50 * time.Second
 	}
+	if opts.Leeway == 0 {
+		opts.Leeway = 24 * time.Hour
+	}
 	quittingTime := time.Now().Add(opts.Ttl)
+	cutOff := time.Now().Add(-opts.Leeway)
 
 	n := 0
 	q := datastore.NewQuery(kind).
-		Filter("Expires<", time.Now()).
+		Filter("Expires<", cutOff).
 		Order("Expires").
 		Limit(400).
 		KeysOnly()
