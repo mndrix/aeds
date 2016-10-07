@@ -29,6 +29,19 @@ type KV struct {
 	Ttl time.Duration `datastore:"-"` // convenient alternative to Expires
 }
 
+// GC defines options for how to perform garbage collection on KV entities.
+type GC struct {
+	// Ttl describes how much time a single GC operation should be allowed to run.
+	// This can be tuned based on how frequently GC jobs are executed.  For
+	// example, if GC runs once per minute, you might set Ttl to 50 seconds.
+	//
+	// Ttl is only a guideline for the GC operation.  It might run longer or
+	// shorter than this target.
+	//
+	// Defaults to 50 seconds.
+	Ttl time.Duration
+}
+
 // Find looks for an existing key-value pair.  Returns
 // NotFound if the key does not exist.
 func Find(c context.Context, k string) (*KV, error) {
@@ -177,15 +190,22 @@ func memKey(key string) string {
 
 var CollectGarbageTimeout = errors.New("CollectGarbage timed out")
 
-// CollectGarbage deletes expired kv entities from the datastore.  It tries to
-// spend no more than the allotted time on this task. This function should be
-// called regularly to prevent expired kvs from accumulating.
+// CollectGarbage deletes expired kv entities from the datastore. This function
+// should be called regularly to prevent expired kvs from accumulating in the
+// datastore.  Returns the number of entities that were removed from datastore.
 //
-// If the timeout is reached, returns CollectGarbageTimeout regardless how many
+// If GC.Ttl is reached, returns CollectGarbageTimeout regardless how many
 // entities were expired before then.
-func CollectGarbage(c context.Context, ttl time.Duration) error {
-	quittingTime := time.Now().Add(ttl)
+func CollectGarbage(c context.Context, opts *GC) (int, error) {
+	if opts == nil {
+		opts = &GC{}
+	}
+	if opts.Ttl == 0 {
+		opts.Ttl = 50 * time.Second
+	}
+	quittingTime := time.Now().Add(opts.Ttl)
 
+	n := 0
 	q := datastore.NewQuery(kind).
 		Filter("Expires<", time.Now()).
 		Order("Expires").
@@ -193,21 +213,24 @@ func CollectGarbage(c context.Context, ttl time.Duration) error {
 		KeysOnly()
 	for {
 		if time.Now().After(quittingTime) {
-			return CollectGarbageTimeout
+			return n, CollectGarbageTimeout
 		}
 
 		keys, err := q.GetAll(c, nil)
 		if len(keys) > 0 {
 			err = datastore.DeleteMulti(c, keys)
 			// don't have to clear memcache. it expires on its own
+			if err == nil {
+				n += len(keys)
+			}
 		}
 		if err != nil {
-			return err
+			return n, err
 		}
 		if len(keys) == 0 {
 			break
 		}
 	}
 
-	return nil
+	return n, nil
 }
