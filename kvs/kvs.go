@@ -227,7 +227,7 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 			return n, CollectGarbageTimeout
 		}
 
-		keys, err := q.GetAll(c, nil)
+		keys, err := getAllKeys(c, q)
 		if len(keys) > 0 {
 			err = datastore.DeleteMulti(c, keys)
 			// don't have to clear memcache. it expires on its own
@@ -244,4 +244,11 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 	}
 
 	return n, nil
+}
+
+// getAllKeys returns keys for every entity in the given query.  q
+// should be a keys-only query, but that's not strictly necessary.
+func getAllKeys(c context.Context, q *datastore.Query) ([]*datastore.Key, error) {
+	keys, err := q.GetAll(c, nil)
+	return keys, err
 }
