@@ -228,7 +228,7 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 			return n, CollectGarbageTimeout
 		}
 
-		keys, _, err := getAllKeys(c, q)
+		keys, cursor, err := getAllKeys(c, q)
 		if len(keys) > 0 {
 			err = datastore.DeleteMulti(c, keys)
 			// don't have to clear memcache. it expires on its own
@@ -242,10 +242,25 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 		if len(keys) == 0 {
 			break
 		}
+		q = q.Start(cursor) // See Note_eventual
 	}
 
 	return n, nil
 }
+
+// Note_eventual:
+//
+// When collecting kvs garbage, we follow the pattern: query, delete,
+// query. Because datastore queries are eventually consistent, the
+// second query can return entities which we just deleted.  Then we
+// spend effort trying to delete the entity again eventhough it's
+// already gone.  Based on App Engine trace data, this happens
+// relatively frequently.  The stale query results can persist for
+// 10-15 seconds in some cases and be included in every subsequent
+// query.
+//
+// By using query cursors we can tell the query engine to skip past
+// the entities we've already seen, whether they're stale or not.
 
 // getAllKeys returns keys for every entity in the given query.  q
 // should be a keys-only query, but that's not strictly necessary.
