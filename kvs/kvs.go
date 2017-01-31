@@ -249,6 +249,18 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 // getAllKeys returns keys for every entity in the given query.  q
 // should be a keys-only query, but that's not strictly necessary.
 func getAllKeys(c context.Context, q *datastore.Query) ([]*datastore.Key, error) {
-	keys, err := q.GetAll(c, nil)
-	return keys, err
+	var keys []*datastore.Key
+
+	t := q.Run(c)
+	for {
+		key, err := t.Next(nil)
+		if err == datastore.Done {
+			break
+		}
+		if err != nil {
+			return keys, err
+		}
+		keys = append(keys, key)
+	}
+	return keys, nil
 }
