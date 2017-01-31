@@ -227,7 +227,7 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 			return n, CollectGarbageTimeout
 		}
 
-		keys, err := getAllKeys(c, q)
+		keys, _, err := getAllKeys(c, q)
 		if len(keys) > 0 {
 			err = datastore.DeleteMulti(c, keys)
 			// don't have to clear memcache. it expires on its own
@@ -248,19 +248,27 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 
 // getAllKeys returns keys for every entity in the given query.  q
 // should be a keys-only query, but that's not strictly necessary.
-func getAllKeys(c context.Context, q *datastore.Query) ([]*datastore.Key, error) {
+//
+// It also returns a cursor pointing at the place where we left off
+// fetching keys.  This can be used to fetch another batch of keys.
+func getAllKeys(c context.Context, q *datastore.Query) ([]*datastore.Key, datastore.Cursor, error) {
+	var cursor datastore.Cursor
 	var keys []*datastore.Key
 
 	t := q.Run(c)
 	for {
 		key, err := t.Next(nil)
 		if err == datastore.Done {
+			cursor, err = t.Cursor()
+			if err != nil {
+				return keys, datastore.Cursor{}, err
+			}
 			break
 		}
 		if err != nil {
-			return keys, err
+			return keys, datastore.Cursor{}, err
 		}
 		keys = append(keys, key)
 	}
-	return keys, nil
+	return keys, cursor, nil
 }
