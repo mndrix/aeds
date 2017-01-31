@@ -216,11 +216,12 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 	quittingTime := time.Now().Add(opts.Ttl)
 	cutOff := time.Now().Add(-opts.Leeway)
 
+	const limit = 400
 	n := 0
 	q := datastore.NewQuery(kind).
 		Filter("Expires<", cutOff).
 		Order("Expires").
-		Limit(400).
+		Limit(limit).
 		KeysOnly()
 	for {
 		if time.Now().After(quittingTime) {
