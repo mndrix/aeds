@@ -239,7 +239,8 @@ func CollectGarbage(c context.Context, opts *GC) (int, error) {
 		if err != nil {
 			return n, err
 		}
-		if len(keys) == 0 {
+		if len(keys) < limit {
+			// fetched all keys in 1st batch. no need for 2nd batch
 			break
 		}
 		q = q.Start(cursor) // See Note_eventual
