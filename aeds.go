@@ -56,6 +56,28 @@ func Key(c context.Context, e Entity) *datastore.Key {
 	return datastore.NewKey(c, e.Kind(), e.StringId(), 0, nil)
 }
 
+// Get retrieves an entity directly from the datastore, skipping all
+// caches.  Most code should use FromId but Get can be helpful inside
+// datastore transactions where caching would interfere.
+//
+// Get automatically calls IdempotentReset, if applicable, to handle
+// retrying transactions.
+func Get(c context.Context, e Entity) error {
+	if x, ok := e.(NeedsIdempotentReset); ok {
+		x.IdempotentReset()
+	}
+
+	lookupKey := Key(c, e)
+	err := datastore.Get(c, lookupKey, e)
+	if err == nil || IsErrFieldMismatch(err) {
+		if x, ok := e.(HasGetHook); ok {
+			x.HookAfterGet()
+		}
+		return nil
+	}
+	return err
+}
+
 // Put stores an entity in the datastore.
 func Put(c context.Context, e Entity) (*datastore.Key, error) {
 	if x, ok := e.(HasPutHook); ok {
