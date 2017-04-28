@@ -71,7 +71,7 @@ func Find(c context.Context, k string) (*KV, error) {
 	if err != nil {
 		return nil, err
 	}
-	if !kv.Expires.IsZero() && kv.Expires.Before(time.Now()) {
+	if kv.isExpired() {
 		// key has expired. pretend it doesn't exist
 		return nil, NotFound
 	}
@@ -88,6 +88,10 @@ func Find(c context.Context, k string) (*KV, error) {
 	_ = err // memcache is an optimization. ignore its errors.
 
 	return kv, nil
+}
+
+func (kv *KV) isExpired() bool {
+	return !kv.Expires.IsZero() && kv.Expires.Before(time.Now())
 }
 
 func (kv *KV) datastoreKey(c context.Context) *datastore.Key {
