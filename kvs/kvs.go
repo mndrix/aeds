@@ -98,8 +98,8 @@ func (kv *KV) datastoreKey(c context.Context) *datastore.Key {
 	return datastore.NewKey(c, kind, kv.Key, 0, nil)
 }
 
-// Put stores a key-value pair until its expiration.
-func (kv *KV) Put(c context.Context) error {
+// build a memcache item and standardize kv.Expiration
+func (kv *KV) memcacheItem() *memcache.Item {
 	// prepare a memcache item for later
 	memcacheKey := memKey(kv.Key)
 	item := &memcache.Item{
@@ -115,6 +115,13 @@ func (kv *KV) Put(c context.Context) error {
 	} else if !kv.Expires.IsZero() {
 		item.Expiration = kv.Expires.Sub(time.Now())
 	}
+
+	return item
+}
+
+// Put stores a key-value pair until its expiration.
+func (kv *KV) Put(c context.Context) error {
+	item := kv.memcacheItem()
 
 	// store kv into datastore for permanent storage
 	_, err := datastore.Put(c, kv.datastoreKey(c), kv)
