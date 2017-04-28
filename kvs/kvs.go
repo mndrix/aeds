@@ -136,6 +136,50 @@ func (kv *KV) Put(c context.Context) error {
 	return nil
 }
 
+// Modify atomically changes the value of a KV by applying a function
+// to its current value.  The bool given to the callback is true if
+// the key exists and hasn't expired, false otherwise.
+//
+// The callback should return an error if it's unable to modify the
+// value given.  That error value becomes Modify's error value.
+//
+// Put and Modify don't play well together.  For any given key, it's
+// best to choose one and use it exclusively for all writes.  Find
+// works well for reads in both cases.
+func Modify(c context.Context, k string, f func(*KV, bool) error) error {
+	var kv KV
+	var item *memcache.Item
+	key := datastore.NewKey(c, kind, k, 0, nil)
+	err := datastore.RunInTransaction(c, func(c context.Context) error {
+		err := datastore.Get(c, key, &kv)
+		if err == nil && kv.isExpired() {
+			kv = KV{} // pretend there was no value
+			err = datastore.ErrNoSuchEntity
+		}
+		switch err {
+		case nil:
+			f(&kv, true)
+		case datastore.ErrNoSuchEntity:
+			kv.Key = k
+			f(&kv, false)
+		default:
+			return err
+		}
+		item = kv.memcacheItem()
+
+		_, err = datastore.Put(c, key, &kv)
+		return err
+	}, nil)
+	if err != nil {
+		return err
+	}
+
+	// update memcache
+	err = memcache.Set(c, item)
+	_ = err // memcache is an optimization. ignore errors
+	return nil
+}
+
 // Remove a rule in the datastore
 func (kv *KV) Delete(c context.Context) error {
 	// delete from datastore
